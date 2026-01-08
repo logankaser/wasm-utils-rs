@@ -4,12 +4,12 @@ use heck::{ToLowerCamelCase, ToPascalCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
+    Error, Fields, FieldsNamed, Ident, ItemStruct, Lit, Meta, MetaNameValue, NestedMeta, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    Error, Fields, FieldsNamed, Ident, ItemStruct, Lit, Meta, MetaNameValue, NestedMeta, Token,
 };
-use ts_type::{ts_type, ToTsType, TsType};
+use ts_type::{ToTsType, TsType, ts_type};
 
 /// Return a [`TokenStream`] that expands into a formatted [`compile_error!`].
 ///
@@ -46,7 +46,7 @@ impl Parse for TsArgs {
                     return Err(Error::new(
                         key.span(),
                         &format!("Unknown argument: `{}`", key),
-                    ))
+                    ));
                 }
             }
 
@@ -282,10 +282,10 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
                 Ok(Meta::List(list)) => list,
                 _ => {
                     abort!(
-                    "`ts` attribute for field `{}` must be a list, e.g. `#[ts(type = \"Js{}\")]`.",
-                    field_name.to_string(),
-                    field_name.to_string().to_pascal_case(),
-                )
+                        "`ts` attribute for field `{}` must be a list, e.g. `#[ts(type = \"Js{}\")]`.",
+                        field_name.to_string(),
+                        field_name.to_string().to_pascal_case(),
+                    )
                 }
             };
 
@@ -293,51 +293,59 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
             for arg in args_list.nested {
                 // Ensure the items in the list are name-value pairs
                 match arg {
-                        NestedMeta::Meta(Meta::NameValue(arg)) => {
-                            let key = arg.path.get_ident().unwrap().to_string();
+                    NestedMeta::Meta(Meta::NameValue(arg)) => {
+                        let key = arg.path.get_ident().unwrap().to_string();
 
-                            // Match the key to extract the value
-                            match key.as_str() {
-                                "name" => {
-                                    match arg.lit {
-                                        Lit::Str(lit_str) => ts_field_name = format_ident!("{}", lit_str.value()),
-                                        _ => abort!("`name` for field `{field_name}` must be a string literal."),
-                                    };
-                                }
-                                "type" => {
-                                    match arg.lit {
-                                        Lit::Str(lit_str) => {
-                                            let ts_type = TsType::from_ts_str(lit_str.value().as_str());
-                                            ts_field_type = match ts_type {
-                                                Ok(ts_type) => ts_type,
-                                                Err(err) => abort!("{}", err),
-                                            }
+                        // Match the key to extract the value
+                        match key.as_str() {
+                            "name" => {
+                                match arg.lit {
+                                    Lit::Str(lit_str) => {
+                                        ts_field_name = format_ident!("{}", lit_str.value())
+                                    }
+                                    _ => abort!(
+                                        "`name` for field `{field_name}` must be a string literal."
+                                    ),
+                                };
+                            }
+                            "type" => {
+                                match arg.lit {
+                                    Lit::Str(lit_str) => {
+                                        let ts_type = TsType::from_ts_str(lit_str.value().as_str());
+                                        ts_field_type = match ts_type {
+                                            Ok(ts_type) => ts_type,
+                                            Err(err) => abort!("{}", err),
                                         }
-                                        _ => abort!("`type` for field `{field_name}` must be a string literal."),
-                                    };
-                                }
-                                "optional" => {
-                                    match arg.lit {
-                                        Lit::Bool(bool_lit) => is_optional = bool_lit.value,
-                                        _ => abort!("`optional` for field `{field_name}` must be a boolean literal."),
-                                    };
-                                }
-                                unknown => abort!(
-                                    r#"Unknown argument for field `{field}`: `{attr}`. Options are:
+                                    }
+                                    _ => abort!(
+                                        "`type` for field `{field_name}` must be a string literal."
+                                    ),
+                                };
+                            }
+                            "optional" => {
+                                match arg.lit {
+                                    Lit::Bool(bool_lit) => is_optional = bool_lit.value,
+                                    _ => abort!(
+                                        "`optional` for field `{field_name}` must be a boolean literal."
+                                    ),
+                                };
+                            }
+                            unknown => abort!(
+                                r#"Unknown argument for field `{field}`: `{attr}`. Options are:
     - type: The TypeScript type of the field
     - name: The name of the field in the TypeScript interface
     - optional: Whether the field is optional in TypeScript"#,
-                                    field = field_name.to_string(),
-                                    attr = unknown
-                                ),
-                            }
+                                field = field_name.to_string(),
+                                attr = unknown
+                            ),
                         }
-                        _ => abort!(
-                            "`ts` attribute for field `{}` must be a list of name-value pairs, e.g. `#[ts(type = \"{}\")]`.",
-                            field_name.to_string(),
-                            field_name.to_string().to_pascal_case()
-                        )
-                    };
+                    }
+                    _ => abort!(
+                        "`ts` attribute for field `{}` must be a list of name-value pairs, e.g. `#[ts(type = \"{}\")]`.",
+                        field_name.to_string(),
+                        field_name.to_string().to_pascal_case()
+                    ),
+                };
             }
 
             // Remove the attribute from the field

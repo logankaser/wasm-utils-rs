@@ -1,5 +1,5 @@
 let imports = {};
-imports['./sandbox_bg.js'] = module.exports;
+imports['./example_bg.js'] = module.exports;
 let wasm;
 const { TextDecoder, TextEncoder } = require(`util`);
 let WASM_VECTOR_LEN = 0;
@@ -123,18 +123,18 @@ module.exports.__wbg_BigInt_470dd987b8190f8e = function (arg0) {
   const ret = BigInt(arg0);
   return ret;
 };
-module.exports.__wbg_account_c8537d5970c64ede = function (arg0, arg1) {
+module.exports.__wbg_account_8cf7c62de4012405 = function (arg0, arg1) {
   const ret = arg1.account;
   const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
   const len1 = WASM_VECTOR_LEN;
   getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
   getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 };
-module.exports.__wbg_amount_eb12f3622eb0b674 = function (arg0) {
+module.exports.__wbg_amount_9f3fed69b5b9fc27 = function (arg0) {
   const ret = arg0.amount;
   return ret;
 };
-module.exports.__wbg_decimals_92ea447d47184ee9 = function (arg0) {
+module.exports.__wbg_decimals_84a3e1b4cd028a1e = function (arg0) {
   const ret = arg0.decimals;
   return isLikeNone(ret) ? 0xFFFFFF : ret;
 };
@@ -168,7 +168,7 @@ module.exports.__wbg_stack_0ed75d68575b0f3c = function (arg0, arg1) {
   getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
   getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 };
-module.exports.__wbg_symbol_7fd54b5f89b8bdb7 = function (arg0, arg1) {
+module.exports.__wbg_symbol_93adfd7a6cafb0de = function (arg0, arg1) {
   const ret = arg1.symbol;
   const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
   const len1 = WASM_VECTOR_LEN;
@@ -182,11 +182,11 @@ module.exports.__wbg_toString_2f76f493957b63da = function (arg0, arg1, arg2) {
   getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
   getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 };
-module.exports.__wbg_token_62ddd92f7e597a41 = function (arg0) {
+module.exports.__wbg_token_cfa1fb82d09d890d = function (arg0) {
   const ret = arg0.token;
   return ret;
 };
-module.exports.__wbg_totalsupply_c0b3565ba0adae11 = function (arg0) {
+module.exports.__wbg_totalsupply_95ab9dd1a90bf8d3 = function (arg0) {
   const ret = arg0.totalSupply;
   return ret;
 };
@@ -215,7 +215,7 @@ module.exports.__wbindgen_number_new = function (arg0) {
 module.exports.__wbindgen_throw = function (arg0, arg1) {
   throw new Error(getStringFromWasm0(arg0, arg1));
 };
-const path = require('path').join(__dirname, 'sandbox_bg.wasm');
+const path = require('path').join(__dirname, 'example_bg.wasm');
 const bytes = require('fs').readFileSync(path);
 
 const wasmModule = new WebAssembly.Module(bytes);

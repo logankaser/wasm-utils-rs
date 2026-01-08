@@ -1,5 +1,5 @@
 [package]
-name = "sandbox"
+name = "example"
 version = "1.0.0"
 edition = "2024"
 license = "AGPL-3.0"
@@ -22,6 +22,6 @@ getrandom = { version = "0.2", features = ["js"] }
 rand = "0.8.5"
 
 # workspace
-ts-macro = { path = "../ts-macro" }
-ts-type = { path = "../ts-type" }
-utils-core = { path = "../utils-core" }
+ts-macro = { path = "../../crates/ts-macro" }
+ts-type = { path = "../../crates/ts-type" }
+utils-core = { path = "../../crates/utils-core" }

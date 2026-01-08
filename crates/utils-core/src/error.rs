@@ -178,9 +178,11 @@ mod tests {
     #[test]
     fn test_generic_error() {
         let error = error!("Bad value: {}", "Foo");
-        assert!(error
-            .to_string()
-            .starts_with("Bad value: Foo\n    Location: "));
+        assert!(
+            error
+                .to_string()
+                .starts_with("Bad value: Foo\n    Location: ")
+        );
     }
 
     #[test]

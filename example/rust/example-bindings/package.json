@@ -1,0 +1,29 @@
+{
+  "name": "@workspace/example-bindings",
+  "version": "1.0.0",
+  "license": "AGPL-3.0",
+  "files": [
+    "example_bindings.js",
+    "example_bindings.cjs",
+    "example_bindings.d.ts",
+    "example_bindings_bg.wasm"
+  ],
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "type": "module",
+  "main": "example_bindings.cjs",
+  "types": "example_bindings.d.ts",
+  "exports": {
+    ".": {
+      "default": {
+        "require": "./example_bindings.cjs",
+        "import": "./example_bindings.js",
+        "types": "./example_bindings.d.ts"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

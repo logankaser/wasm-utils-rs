@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-  "crates/sandbox",
   "crates/utils-core",
   "crates/ts-macro",
   "crates/ts-type",
+  "example/rust",
 ]
 rust-version = "1.78"

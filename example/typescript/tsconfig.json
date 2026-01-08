@@ -13,9 +13,8 @@
     "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
     "allowJs": true,
-    "baseUrl": ".",
     "paths": {
-      "src/*": ["src/*"]
+      "src/*": ["./src/*"]
     },
 
     // Type Checking

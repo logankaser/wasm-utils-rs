@@ -271,7 +271,7 @@ impl TsType {
     /// let type2 = TsType::Union(vec![
     ///     TsType::Base("string".to_string()),
     ///     TsType::Base("number".to_string()),
-    /// ])
+    /// ]);
     /// assert_eq!(type1, type2);
     /// ```
     #[track_caller]

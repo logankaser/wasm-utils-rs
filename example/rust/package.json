@@ -1,0 +1,21 @@
+{
+  "name": "example-bindings",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "watch": "bun run build && onchange 'src/**/*.rs' -- bun run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "onchange": "^7.1.0",
+    "proper-lockfile": "^4.1.2",
+    "smol-toml": "^1.4.2",
+    "typescript": "^5.9.3",
+    "wasm-pack": "^0.13.1",
+    "wasm-pkg-build": "^0.5.3"
+  }
+}

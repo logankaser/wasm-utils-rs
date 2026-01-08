@@ -167,7 +167,7 @@ macro_rules! ts_type {
   // indexed access
   ($object:tt [ $($key:tt)+ ] $($rest:tt)*) => {{
       let mut stack = vec![];
-      let mut object = $crate::TsType::IndexedAccess(Box::new(ts_tt!($object)), Box::new(ts_type!($($key)+)));
+      let object = $crate::TsType::IndexedAccess(Box::new(ts_tt!($object)), Box::new(ts_type!($($key)+)));
       build_ts_type!(stack object $($rest)*)
   }};
 
