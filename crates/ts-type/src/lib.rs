@@ -982,7 +982,88 @@ mod tests {
 
     #[test]
     fn test_variable_parsing() {
-        // ... (existing code)
+        let base = ts_type!(string);
+        let generic = ts_type!(Set<string>);
+        let group = ts_type!((string | number));
+        let intersection = ts_type!(string & number);
+        let _union = ts_type!(string | number);
+
+        //  Single variable //
+
+        let single = ts_type!((#base));
+        assert_eq!(single.to_string(), "string",);
+
+        let single_generic = ts_type!((#generic));
+        assert_eq!(single_generic.to_string(), "Set<string>");
+
+        let single_group = ts_type!((#group));
+        assert_eq!(single_group.to_string(), "(string | number)");
+
+        let single_intersection = ts_type!((#intersection));
+        assert_eq!(single_intersection.to_string(), "string & number");
+
+        let single_union = ts_type!((#_union));
+        assert_eq!(single_union.to_string(), "string | number");
+
+        // Generics //
+
+        let generic = ts_type!(Set<(#base)>);
+        assert_eq!(generic.to_string(), "Set<string>");
+
+        let generic_two = ts_type!(Set<(#base), (#_union)>);
+        assert_eq!(generic_two.to_string(), "Set<string, string | number>");
+
+        // Unions //
+
+        let start_union = ts_type!((#base) | true | false);
+        assert_eq!(start_union.to_string(), "string | true | false");
+
+        let mid_union = ts_type!(true | (#base) | false);
+        assert_eq!(mid_union.to_string(), "true | string | false");
+
+        let end_union = ts_type!(true | false | (#base));
+        assert_eq!(end_union.to_string(), "true | false | string");
+
+        let start_union_pair = ts_type!((#base) | true);
+        assert_eq!(start_union_pair.to_string(), "string | true");
+
+        let end_union_pair = ts_type!(true | (#base));
+        assert_eq!(end_union_pair.to_string(), "true | string");
+
+        let var_union = ts_type!((#base) | (#generic) | (#group));
+        assert_eq!(
+            var_union.to_string(),
+            "string | Set<string> | (string | number)"
+        );
+
+        let var_union_pair = ts_type!((#base) | (#generic));
+        assert_eq!(var_union_pair.to_string(), "string | Set<string>");
+
+        // Intersections //
+
+        let start_intersection = ts_type!((#base) & true & false);
+        assert_eq!(start_intersection.to_string(), "string & true & false");
+
+        let mid_intersection = ts_type!(true & (#base) & false);
+        assert_eq!(mid_intersection.to_string(), "true & string & false");
+
+        let end_intersection = ts_type!(true & false & (#base));
+        assert_eq!(end_intersection.to_string(), "true & false & string");
+
+        let start_intersection_pair = ts_type!((#base) & true);
+        assert_eq!(start_intersection_pair.to_string(), "string & true");
+
+        let end_intersection_pair = ts_type!(true & (#base));
+        assert_eq!(end_intersection_pair.to_string(), "true & string");
+
+        let var_intersection = ts_type!((#base) & (#generic) & (#group));
+        assert_eq!(
+            var_intersection.to_string(),
+            "string & Set<string> & (string | number)"
+        );
+
+        let var_intersection_pair = ts_type!((#base) & (#generic));
+        assert_eq!(var_intersection_pair.to_string(), "string & Set<string>");
     }
 
     #[test]
@@ -1024,5 +1105,14 @@ mod tests {
 
         let ty: Type = parse_quote!(Rc<String>);
         assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "string");
+    }
+
+    #[test]
+    fn test_tuple_vs_array_parsing() {
+        let t = TsType::from_ts_str("[number]").unwrap();
+        assert!(matches!(t, TsType::Tuple(_)), "Expected Tuple, got {:?}", t);
+
+        let t2 = TsType::from_ts_str("number[]").unwrap();
+        assert!(matches!(t2, TsType::Array(_)), "Expected Array, got {:?}", t2);
     }
 }
