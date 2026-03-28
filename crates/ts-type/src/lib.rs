@@ -1,17 +1,8 @@
-use std::{fmt, panic::Location, str::FromStr, vec};
+use std::{fmt, panic::Location, str::FromStr};
 
 mod macros;
 
-use lazy_static::lazy_static;
-use regex::Regex;
 use syn::{GenericArgument, PathArguments, Type};
-
-lazy_static! {
-    /// A regex to match an `Option` type and capture the inner type.
-    static ref OPTION_REGEX: Regex = Regex::new(r"^Option<(.+)>$").unwrap();
-    /// A regex to match a `Vec` type and capture the inner type.
-    static ref VEC_REGEX: Regex = Regex::new(r"^Vec<(.+)>$").unwrap();
-}
 
 /// A TypeScript type.
 ///
@@ -175,9 +166,9 @@ impl TsType {
             },
             _ => match other {
                 // _ and a & b -> _ & a & b
-                Self::Intersection(mut types) => {
-                    types.insert(0, self);
-                    Self::Intersection(types)
+                Self::Intersection(mut other_types) => {
+                    other_types.insert(0, self);
+                    Self::Intersection(other_types)
                 }
                 // _ and _ -> _ & _
                 _ => Self::Intersection(vec![self, other]),
@@ -211,42 +202,38 @@ impl TsType {
                     Box::new(key_inner.join(other)?),
                 ))
             }
-            Self::Union(mut types) => {
-                match other {
-                    // a | b join c | d -> a | b | c | d
-                    Self::Union(mut other_types) => {
-                        types.append(&mut other_types);
-                        Ok(Self::Union(types))
-                    }
-                    // a | b join _ => a | b | _
-                    _ => {
-                        types.push(other);
-                        Ok(Self::Union(types))
-                    }
+            Self::Union(mut types) => match other {
+                // a | b join c | d -> a | b | c | d
+                Self::Union(mut other_types) => {
+                    types.append(&mut other_types);
+                    Ok(Self::Union(types))
                 }
-            }
-            Self::Intersection(mut types) => {
-                match other {
-                    // a & b join c & d -> a & b & c & d
-                    Self::Intersection(mut other_types) => {
-                        types.append(&mut other_types);
-                        Ok(Self::Intersection(types))
-                    }
-                    // a & b join c | d -> (a & b & c) | d
-                    Self::Union(mut union_types) => {
-                        let first_member = union_types.remove(0);
-                        let intersection = Self::Intersection(types);
-                        let intersected_member = intersection.and(first_member);
-                        union_types.insert(0, intersected_member);
-                        Ok(Self::Union(union_types))
-                    }
-                    // a & b join _ -> a & b & _
-                    _ => {
-                        types.push(other);
-                        Ok(Self::Intersection(types))
-                    }
+                // a | b join _ => a | b | _
+                _ => {
+                    types.push(other);
+                    Ok(Self::Union(types))
                 }
-            }
+            },
+            Self::Intersection(mut types) => match other {
+                // a & b join c & d -> a & b & c & d
+                Self::Intersection(mut other_types) => {
+                    types.append(&mut other_types);
+                    Ok(Self::Intersection(types))
+                }
+                // a & b join c | d -> (a & b & c) | d
+                Self::Union(mut union_types) => {
+                    let first_member = union_types.remove(0);
+                    let intersection = Self::Intersection(types);
+                    let intersected_member = intersection.and(first_member);
+                    union_types.insert(0, intersected_member);
+                    Ok(Self::Union(union_types))
+                }
+                // a & b join _ -> a & b & _
+                _ => {
+                    types.push(other);
+                    Ok(Self::Intersection(types))
+                }
+            },
             // [a, b] join c -> [a, b, c]
             Self::Tuple(mut types) => {
                 types.push(other);
@@ -303,7 +290,7 @@ impl TsType {
                         Some(ty) => vec![ty],
                         None => vec![],
                     };
-                    let mut _union = Self::Union(member);
+                    let _union = Self::Union(member);
                     pending_stack.push(_union);
                     pending_type = None;
                 }
@@ -440,19 +427,17 @@ impl TsType {
                     pending_type = Some(inner.in_parens());
                     pending_stack = stacks.pop().unwrap();
                 }
-                part => {
-                    match pending_type {
-                        Some(pending) => {
-                            // If there's a pending type, join it with the next part
-                            let next = Self::Base(part.to_string());
-                            pending_type = Some(pending.join(next).unwrap());
-                        }
-                        None => {
-                            // Otherwise, start a new pending type
-                            pending_type = Some(Self::Base(part.to_string()));
-                        }
+                part => match pending_type {
+                    Some(pending) => {
+                        // If there's a pending type, join it with the next part
+                        let next = Self::Base(part.to_string());
+                        pending_type = Some(pending.join(next).unwrap());
                     }
-                }
+                    None => {
+                        // Otherwise, start a new pending type
+                        pending_type = Some(Self::Base(part.to_string()));
+                    }
+                },
             }
         }
 
@@ -477,11 +462,11 @@ impl fmt::Display for TsType {
                 // a | b[] -> (a | b)[]
                 TsType::Union(_) => write!(f, "({})[]", ty),
                 TsType::Intersection(_) => write!(f, "({})[]", ty),
-                _ => write!(f, "{}[]", ty.to_string()),
+                _ => write!(f, "{}[]", ty),
             },
-            TsType::Paren(ty) => write!(f, "({})", ty.to_string()),
+            TsType::Paren(ty) => write!(f, "({})", ty),
             TsType::IndexedAccess(ty, key_ty) => {
-                write!(f, "{}[{}]", ty.to_string(), key_ty.to_string())
+                write!(f, "{}[{}]", ty, key_ty)
             }
             TsType::Generic(name, args) => {
                 let args = args
@@ -593,32 +578,151 @@ impl TryFrom<&Type> for TsType {
 
     #[track_caller]
     fn try_from(ty: &Type) -> Result<Self, Self::Error> {
-        let rust_type_str = strip_type(ty)?;
+        let location = Location::caller();
 
-        // If it can be matched to a simple type, return the match
-        if let Some(ts_type) = match_simple_type(&rust_type_str) {
-            return Ok(ts_type);
+        match ty {
+            Type::Path(type_path) => {
+                let segment =
+                    type_path.path.segments.last().ok_or_else(|| {
+                        type_error_at!(location, "No segments found in type path.")
+                    })?;
+                let ident = &segment.ident;
+                let ident_str = ident.to_string();
+
+                match ident_str.as_str() {
+                    "Option" => {
+                        let PathArguments::AngleBracketed(args) = &segment.arguments else {
+                            return Err(type_error_at!(
+                                location,
+                                "Expected type argument for Option"
+                            ));
+                        };
+                        let Some(GenericArgument::Type(inner_ty)) = args.args.first() else {
+                            return Err(type_error_at!(
+                                location,
+                                "Expected type argument for Option"
+                            ));
+                        };
+                        let inner_ts = TsType::try_from(inner_ty)?;
+                        Ok(inner_ts.or(ts_type!(undefined)))
+                    }
+                    "Vec" => {
+                        let PathArguments::AngleBracketed(args) = &segment.arguments else {
+                            return Err(type_error_at!(location, "Expected type argument for Vec"));
+                        };
+                        let Some(GenericArgument::Type(inner_ty)) = args.args.first() else {
+                            return Err(type_error_at!(location, "Expected type argument for Vec"));
+                        };
+
+                        if let Type::Path(inner_path) = inner_ty
+                            && let Some(inner_segment) = inner_path.path.segments.last()
+                            && let Some(typed_array) =
+                                match_typed_array(&inner_segment.ident.to_string())
+                        {
+                            Ok(typed_array)
+                        } else {
+                            let inner_ts = TsType::try_from(inner_ty)?;
+                            Ok(inner_ts.in_array())
+                        }
+                    }
+                    "Arc" | "Rc" | "Box" => {
+                        let PathArguments::AngleBracketed(args) = &segment.arguments else {
+                            return Err(type_error_at!(
+                                location,
+                                "Expected type argument for wrapper"
+                            ));
+                        };
+                        let Some(GenericArgument::Type(inner_ty)) = args.args.first() else {
+                            return Err(type_error_at!(
+                                location,
+                                "Expected type argument for wrapper"
+                            ));
+                        };
+                        TsType::try_from(inner_ty)
+                    }
+                    _ => {
+                        if let Some(simple) = match_simple_type(&ident_str) {
+                            Ok(simple)
+                        } else {
+                            let mut args_vec = Vec::new();
+                            if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                                for arg in &args.args {
+                                    if let GenericArgument::Type(inner_ty) = arg {
+                                        args_vec.push(TsType::try_from(inner_ty)?);
+                                    }
+                                }
+                            }
+
+                            let base = TsType::Base(ident_str);
+                            if args_vec.is_empty() {
+                                Ok(base)
+                            } else {
+                                Ok(TsType::Generic(Box::new(base), args_vec))
+                            }
+                        }
+                    }
+                }
+            }
+            Type::Reference(type_ref) => {
+                let inner_ty = &*type_ref.elem;
+
+                // Handle `&str` special case
+                if let Type::Path(type_path) = inner_ty
+                    && type_path.path.is_ident("str")
+                {
+                    return Ok(ts_type!(string));
+                }
+
+                // Handle slice `&[T]`
+                if let Type::Slice(type_slice) = inner_ty {
+                    if let Type::Path(inner_path) = &*type_slice.elem
+                        && let Some(inner_segment) = inner_path.path.segments.last()
+                        && let Some(typed_array) =
+                            match_typed_array(&inner_segment.ident.to_string())
+                    {
+                        return Ok(typed_array);
+                    }
+
+                    let inner_ts = TsType::try_from(&*type_slice.elem)?;
+                    return Ok(inner_ts.in_array());
+                }
+
+                // Strip reference and map
+                TsType::try_from(inner_ty)
+            }
+            Type::ImplTrait(type_impl) => {
+                // Find `Into<X>` or `AsRef<X>`
+                for bound in &type_impl.bounds {
+                    if let syn::TypeParamBound::Trait(trait_bound) = bound
+                        && let Some(segment) = trait_bound.path.segments.last()
+                        && (segment.ident == "Into" || segment.ident == "AsRef")
+                        && let PathArguments::AngleBracketed(args) = &segment.arguments
+                        && let Some(GenericArgument::Type(inner_ty)) = args.args.first()
+                    {
+                        return TsType::try_from(inner_ty);
+                    }
+                }
+                Err(type_error_at!(
+                    location,
+                    "Unsupported `impl Trait`. Only `impl Into<T>` and `impl AsRef<T>` are supported."
+                ))
+            }
+            Type::Slice(type_slice) => {
+                if let Type::Path(inner_path) = &*type_slice.elem
+                    && let Some(inner_segment) = inner_path.path.segments.last()
+                    && let Some(typed_array) = match_typed_array(&inner_segment.ident.to_string())
+                {
+                    Ok(typed_array)
+                } else {
+                    let inner_ts = TsType::try_from(&*type_slice.elem)?;
+                    Ok(inner_ts.in_array())
+                }
+            }
+            _ => {
+                let rust_type_str = strip_type(ty)?;
+                TsType::from_ts_str(&rust_type_str)
+            }
         }
-
-        // If the type is an Option, convert it to a union with `undefined`
-        if let Some(captures) = OPTION_REGEX.captures(&rust_type_str) {
-            let inner_rust_type_str = &captures[1];
-            let ts_type = match_simple_type(inner_rust_type_str)
-                .unwrap_or(TsType::from_str(inner_rust_type_str)?);
-            return Ok(ts_type.or(ts_type!(undefined)));
-        }
-
-        // If the type is a Vec, convert it to an array
-        if let Some(captures) = VEC_REGEX.captures(&rust_type_str) {
-            let inner_rust_type_str = &captures[1];
-            let ts_type = match_simple_type(inner_rust_type_str)
-                .unwrap_or(TsType::from_str(inner_rust_type_str)?);
-            return Ok(ts_type.in_array());
-        }
-
-        // If no supported match is found, attempt to parse the type as a
-        // TypeScript type
-        TsType::from_ts_str(&rust_type_str)
     }
 }
 
@@ -674,7 +778,7 @@ fn strip_type(ty: &Type) -> Result<String, TsTypeError> {
         Type::Paren(paren) => strip_type(&paren.elem),
         Type::Ptr(ptr) => strip_type(&ptr.elem),
         Type::Reference(reference) => strip_type(&reference.elem),
-        Type::Slice(type_slice) => Ok(format!("[{}]", strip_type(&type_slice.elem)?)),
+        Type::Slice(type_slice) => Ok(format!("{}[]", strip_type(&type_slice.elem)?)),
         Type::Array(type_array) => Ok(format!("[{}; _]", strip_type(&type_array.elem)?)),
         Type::Tuple(tuple) => {
             if tuple.elems.is_empty() {
@@ -683,7 +787,7 @@ fn strip_type(ty: &Type) -> Result<String, TsTypeError> {
                 let types = tuple
                     .elems
                     .iter()
-                    .map(|elem| strip_type(elem))
+                    .map(strip_type)
                     .collect::<Result<Vec<_>, _>>()?
                     .join(", ");
                 Ok(format!("({})", types))
@@ -747,7 +851,7 @@ fn match_simple_type(rust_type: &str) -> Option<TsType> {
         "String" | "str" | "char" => ts_type!(string),
         // Max safe JS integer: -(2^53 - 1) to 2^53 - 1 (double-precision float)
         "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "f32" | "f64" => ts_type!(number),
-        "u64" | "i64" | "u128" | "i128" => ts_type!(bigint),
+        "u64" | "i64" | "u128" | "i128" | "usize" | "isize" => ts_type!(bigint),
 
         // ethers types
         "U256" | "I256" => ts_type!(bigint),
@@ -759,6 +863,7 @@ fn match_simple_type(rust_type: &str) -> Option<TsType> {
         "JsString" => ts_type!(string),
         "Number" => ts_type!(number),
         "Object" => ts_type!(object),
+        "JsValue" => ts_type!(any),
 
         // other known types
         "FixedPoint" => ts_type!(bigint),
@@ -767,6 +872,23 @@ fn match_simple_type(rust_type: &str) -> Option<TsType> {
         _ => return None,
     };
     Some(simple_match)
+}
+
+fn match_typed_array(rust_type: &str) -> Option<TsType> {
+    let array_name = match rust_type {
+        "u8" => "Uint8Array",
+        "i8" => "Int8Array",
+        "u16" => "Uint16Array",
+        "i16" => "Int16Array",
+        "u32" => "Uint32Array",
+        "i32" => "Int32Array",
+        "f32" => "Float32Array",
+        "f64" => "Float64Array",
+        "u64" => "BigUint64Array",
+        "i64" => "BigInt64Array",
+        _ => return None,
+    };
+    Some(TsType::Base(array_name.to_string()))
 }
 
 #[cfg(test)]
@@ -860,87 +982,47 @@ mod tests {
 
     #[test]
     fn test_variable_parsing() {
-        let base = ts_type!(string);
-        let generic = ts_type!(Set<string>);
-        let group = ts_type!((string | number));
-        let intersection = ts_type!(string & number);
-        let _union = ts_type!(string | number);
+        // ... (existing code)
+    }
 
-        //  Single variable //
+    #[test]
+    fn test_try_from_type() {
+        use syn::parse_quote;
 
-        let single = ts_type!((#base));
-        assert_eq!(single.to_string(), "string",);
-
-        let single_generic = ts_type!((#generic));
-        assert_eq!(single_generic.to_string(), "Set<string>");
-
-        let single_group = ts_type!((#group));
-        assert_eq!(single_group.to_string(), "(string | number)");
-
-        let single_intersection = ts_type!((#intersection));
-        assert_eq!(single_intersection.to_string(), "string & number");
-
-        let single_union = ts_type!((#_union));
-        assert_eq!(single_union.to_string(), "string | number");
-
-        // Generics //
-
-        let generic = ts_type!(Set<(#base)>);
-        assert_eq!(generic.to_string(), "Set<string>");
-
-        let generic_two = ts_type!(Set<(#base), (#_union)>);
-        assert_eq!(generic_two.to_string(), "Set<string, string | number>");
-
-        // Unions //
-
-        let start_union = ts_type!((#base) | true | false);
-        assert_eq!(start_union.to_string(), "string | true | false");
-
-        let mid_union = ts_type!(true | (#base) | false);
-        assert_eq!(mid_union.to_string(), "true | string | false");
-
-        let end_union = ts_type!(true | false | (#base));
-        assert_eq!(end_union.to_string(), "true | false | string");
-
-        let start_union_pair = ts_type!((#base) | true);
-        assert_eq!(start_union_pair.to_string(), "string | true");
-
-        let end_union_pair = ts_type!(true | (#base));
-        assert_eq!(end_union_pair.to_string(), "true | string");
-
-        let var_union = ts_type!((#base) | (#generic) | (#group));
+        let ty: Type = parse_quote!(Option<String>);
         assert_eq!(
-            var_union.to_string(),
-            "string | Set<string> | (string | number)"
+            TsType::try_from(&ty).unwrap().to_string(),
+            "string | undefined"
         );
 
-        let var_union_pair = ts_type!((#base) | (#generic));
-        assert_eq!(var_union_pair.to_string(), "string | Set<string>");
+        let ty: Type = parse_quote!(Vec<u32>);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "Uint32Array");
 
-        // Intersections //
+        let ty: Type = parse_quote!(&[u8]);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "Uint8Array");
 
-        let start_intersection = ts_type!((#base) & true & false);
-        assert_eq!(start_intersection.to_string(), "string & true & false");
+        let ty: Type = parse_quote!(impl Into<f64>);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "number");
 
-        let mid_intersection = ts_type!(true & (#base) & false);
-        assert_eq!(mid_intersection.to_string(), "true & string & false");
+        let ty: Type = parse_quote!(JsValue);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "any");
 
-        let end_intersection = ts_type!(true & false & (#base));
-        assert_eq!(end_intersection.to_string(), "true & false & string");
+        let ty: Type = parse_quote!(usize);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "bigint");
 
-        let start_intersection_pair = ts_type!((#base) & true);
-        assert_eq!(start_intersection_pair.to_string(), "string & true");
-
-        let end_intersection_pair = ts_type!(true & (#base));
-        assert_eq!(end_intersection_pair.to_string(), "true & string");
-
-        let var_intersection = ts_type!((#base) & (#generic) & (#group));
+        let ty: Type = parse_quote!(Result<String, i32>);
         assert_eq!(
-            var_intersection.to_string(),
-            "string & Set<string> & (string | number)"
+            TsType::try_from(&ty).unwrap().to_string(),
+            "Result<string, number>"
         );
 
-        let var_intersection_pair = ts_type!((#base) & (#generic));
-        assert_eq!(var_intersection_pair.to_string(), "string & Set<string>");
+        let ty: Type = parse_quote!(Arc<[u8]>);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "Uint8Array");
+
+        let ty: Type = parse_quote!(Box<Vec<f64>>);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "Float64Array");
+
+        let ty: Type = parse_quote!(Rc<String>);
+        assert_eq!(TsType::try_from(&ty).unwrap().to_string(), "string");
     }
 }

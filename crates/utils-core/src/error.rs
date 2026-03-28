@@ -155,9 +155,9 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .starts_with(&format!("Bad value: Foo\n    Location: ")),
+                .starts_with("Bad value: Foo\n    Location: "),
             "error = {}",
-            error.to_string()
+            error
         );
     }
 
@@ -165,13 +165,12 @@ mod tests {
     fn test_type_error_at() {
         let location = Location::caller().to_string();
         let error = type_error_at!(location, "Bad value: {}", "Foo");
+        let expected_prefix = format!("Bad value: Foo\n    Location: \"{}\"", location);
         assert!(
+            error.to_string().starts_with(&expected_prefix),
+            "expected = Bad value: Foo\n    Location: {}\nerror = {}",
+            location,
             error
-                .to_string()
-                .starts_with(format!("Bad value: Foo\n    Location: \"{}\"", location).as_str()),
-            "expected = {}\nerror = {}",
-            format!("Bad value: Foo\n    Location: {}", location).as_str(),
-            error.to_string()
         );
     }
 
@@ -189,13 +188,12 @@ mod tests {
     fn test_generic_error_at() {
         let location = Location::caller().to_string();
         let error = error_at!(location, "Bad value: {}", "Foo");
+        let expected_prefix = format!("Bad value: Foo\n    Location: \"{}\"", location);
         assert!(
+            error.to_string().starts_with(&expected_prefix),
+            "expected = Bad value: Foo\n    Location: {}\nerror = {}",
+            location,
             error
-                .to_string()
-                .starts_with(format!("Bad value: Foo\n    Location: \"{}\"", location).as_str()),
-            "expected = {}\nerror = {}",
-            format!("Bad value: Foo\n    Location: {}", location).as_str(),
-            error.to_string()
         );
     }
 }

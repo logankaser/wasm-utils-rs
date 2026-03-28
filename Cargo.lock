@@ -2626,7 +2626,7 @@ version = "1.0.2"
 dependencies = [
  "heck",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.98",
  "ts-type",
  "wasm-bindgen",
 ]
@@ -2635,9 +2635,7 @@ dependencies = [
 name = "ts-type"
 version = "1.0.2"
 dependencies = [
- "lazy_static",
- "regex",
- "syn 1.0.109",
+ "syn 2.0.98",
 ]
 
 [[package]]

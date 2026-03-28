@@ -4,7 +4,7 @@ use heck::{ToLowerCamelCase, ToPascalCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Error, Fields, FieldsNamed, Ident, ItemStruct, Lit, Meta, MetaNameValue, NestedMeta, Token,
+    Error, Fields, FieldsNamed, Ident, ItemStruct, Meta, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -41,11 +41,11 @@ impl Parse for TsArgs {
 
             match key.to_string().as_str() {
                 "name" => args.name = Some(input.parse()?),
-                "extends" => args.extends = Some(input.parse_terminated(Ident::parse)?),
+                "extends" => args.extends = Some(input.parse_terminated(Ident::parse, Token![,])?),
                 _ => {
                     return Err(Error::new(
                         key.span(),
-                        &format!("Unknown argument: `{}`", key),
+                        format!("Unknown argument: `{}`", key),
                     ));
                 }
             }
@@ -163,7 +163,7 @@ impl Parse for TsArgs {
 /// arguments when applied to a field:
 ///
 /// - `name`: The  name of the field in the TypeScript interface as a string. Defaults to the
-///  camelCase version of the Rust field name.
+///   camelCase version of the Rust field name.
 /// - `type`: The TypeScript type of the field as a string. Defaults to best-effort
 ///   inferred.
 /// - `optional`: Whether the field is optional in TypeScript. Defaults to
@@ -260,11 +260,15 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
             let attr = &field.attrs[i];
 
             // Collect doc comments
-            if attr.path.is_ident("doc") {
-                if let Meta::NameValue(MetaNameValue {
-                    lit: Lit::Str(lit_str),
+            if attr.path().is_ident("doc") {
+                if let Meta::NameValue(syn::MetaNameValue {
+                    value:
+                        syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Str(lit_str),
+                            ..
+                        }),
                     ..
-                }) = attr.parse_meta().unwrap()
+                }) = &attr.meta
                 {
                     doc_lines.push(lit_str.value());
                 }
@@ -272,14 +276,87 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
                 continue;
             }
 
-            if !attr.path.is_ident("ts") {
+            if !attr.path().is_ident("ts") {
                 i += 1;
                 continue;
             }
 
-            // Ensure the attribute is a list
-            let args_list = match attr.parse_meta() {
-                Ok(Meta::List(list)) => list,
+            // Parse the `ts` attribute arguments
+            match &attr.meta {
+                Meta::List(list) => {
+                    let result =
+                        list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated);
+                    match result {
+                        Ok(nested) => {
+                            for arg in nested {
+                                if let Meta::NameValue(nv) = arg {
+                                    let key = nv.path.get_ident().unwrap().to_string();
+                                    match key.as_str() {
+                                        "name" => {
+                                            if let syn::Expr::Lit(syn::ExprLit {
+                                                lit: syn::Lit::Str(lit_str),
+                                                ..
+                                            }) = nv.value
+                                            {
+                                                ts_field_name =
+                                                    format_ident!("{}", lit_str.value());
+                                            } else {
+                                                abort!(
+                                                    "`name` for field `{field_name}` must be a string literal."
+                                                );
+                                            }
+                                        }
+                                        "type" => {
+                                            if let syn::Expr::Lit(syn::ExprLit {
+                                                lit: syn::Lit::Str(lit_str),
+                                                ..
+                                            }) = nv.value
+                                            {
+                                                match TsType::from_ts_str(lit_str.value().as_str())
+                                                {
+                                                    Ok(ts_type) => ts_field_type = ts_type,
+                                                    Err(err) => abort!("{}", err),
+                                                }
+                                            } else {
+                                                abort!(
+                                                    "`type` for field `{field_name}` must be a string literal."
+                                                );
+                                            }
+                                        }
+                                        "optional" => {
+                                            if let syn::Expr::Lit(syn::ExprLit {
+                                                lit: syn::Lit::Bool(bool_lit),
+                                                ..
+                                            }) = nv.value
+                                            {
+                                                is_optional = bool_lit.value;
+                                            } else {
+                                                abort!(
+                                                    "`optional` for field `{field_name}` must be a boolean literal."
+                                                );
+                                            }
+                                        }
+                                        unknown => abort!(
+                                            r#"Unknown argument for field `{field}`: `{attr}`. Options are:
+    - type: The TypeScript type of the field
+    - name: The name of the field in the TypeScript interface
+    - optional: Whether the field is optional in TypeScript"#,
+                                            field = field_name.to_string(),
+                                            attr = unknown
+                                        ),
+                                    }
+                                } else {
+                                    abort!(
+                                        "`ts` attribute for field `{}` must be a list of name-value pairs, e.g. `#[ts(type = \"{}\")]`.",
+                                        field_name.to_string(),
+                                        field_name.to_string().to_pascal_case()
+                                    );
+                                }
+                            }
+                        }
+                        Err(err) => abort!("{}", err),
+                    }
+                }
                 _ => {
                     abort!(
                         "`ts` attribute for field `{}` must be a list, e.g. `#[ts(type = \"Js{}\")]`.",
@@ -287,65 +364,6 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
                         field_name.to_string().to_pascal_case(),
                     )
                 }
-            };
-
-            // Iterate over the items in the list and extract the values
-            for arg in args_list.nested {
-                // Ensure the items in the list are name-value pairs
-                match arg {
-                    NestedMeta::Meta(Meta::NameValue(arg)) => {
-                        let key = arg.path.get_ident().unwrap().to_string();
-
-                        // Match the key to extract the value
-                        match key.as_str() {
-                            "name" => {
-                                match arg.lit {
-                                    Lit::Str(lit_str) => {
-                                        ts_field_name = format_ident!("{}", lit_str.value())
-                                    }
-                                    _ => abort!(
-                                        "`name` for field `{field_name}` must be a string literal."
-                                    ),
-                                };
-                            }
-                            "type" => {
-                                match arg.lit {
-                                    Lit::Str(lit_str) => {
-                                        let ts_type = TsType::from_ts_str(lit_str.value().as_str());
-                                        ts_field_type = match ts_type {
-                                            Ok(ts_type) => ts_type,
-                                            Err(err) => abort!("{}", err),
-                                        }
-                                    }
-                                    _ => abort!(
-                                        "`type` for field `{field_name}` must be a string literal."
-                                    ),
-                                };
-                            }
-                            "optional" => {
-                                match arg.lit {
-                                    Lit::Bool(bool_lit) => is_optional = bool_lit.value,
-                                    _ => abort!(
-                                        "`optional` for field `{field_name}` must be a boolean literal."
-                                    ),
-                                };
-                            }
-                            unknown => abort!(
-                                r#"Unknown argument for field `{field}`: `{attr}`. Options are:
-    - type: The TypeScript type of the field
-    - name: The name of the field in the TypeScript interface
-    - optional: Whether the field is optional in TypeScript"#,
-                                field = field_name.to_string(),
-                                attr = unknown
-                            ),
-                        }
-                    }
-                    _ => abort!(
-                        "`ts` attribute for field `{}` must be a list of name-value pairs, e.g. `#[ts(type = \"{}\")]`.",
-                        field_name.to_string(),
-                        field_name.to_string().to_pascal_case()
-                    ),
-                };
             }
 
             // Remove the attribute from the field
@@ -408,17 +426,17 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
     // Prep the expanded struct with the processed attributes removed
     let processed_struct = ItemStruct {
         fields: Fields::Named(FieldsNamed {
-            named: Punctuated::from_iter(processed_fields.into_iter()),
+            named: Punctuated::from_iter(processed_fields),
             brace_token: fields.brace_token,
         }),
         ..item.clone()
     };
 
     let expanded = quote! {
-        #[wasm_bindgen(typescript_custom_section)]
+        #[::wasm_bindgen::prelude::wasm_bindgen(typescript_custom_section)]
         const #const_name: &'static str = #ts_definition;
 
-        #[wasm_bindgen]
+        #[::wasm_bindgen::prelude::wasm_bindgen]
         extern "C" {
             #[wasm_bindgen(typescript_type = #ts_name, #(extends = #extends),*)]
             pub type #ts_name;
