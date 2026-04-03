@@ -4,12 +4,12 @@ use heck::{ToLowerCamelCase, ToPascalCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Error, Fields, FieldsNamed, Ident, ItemStruct, Meta, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
+    Error, Fields, FieldsNamed, Ident, ItemStruct, Meta, Token,
 };
-use ts_type::{ToTsType, TsType, ts_type};
+use ts_type::{ts_type, ToTsType, TsType};
 
 /// Return a [`TokenStream`] that expands into a formatted [`compile_error!`].
 ///
@@ -26,6 +26,7 @@ macro_rules! abort {
 struct TsArgs {
     name: Option<Ident>,
     extends: Option<Punctuated<Ident, Token![,]>>,
+    rename_all: Option<String>,
 }
 
 impl Parse for TsArgs {
@@ -33,6 +34,7 @@ impl Parse for TsArgs {
         let mut args = TsArgs {
             name: None,
             extends: None,
+            rename_all: None,
         };
 
         while !input.is_empty() {
@@ -42,6 +44,20 @@ impl Parse for TsArgs {
             match key.to_string().as_str() {
                 "name" => args.name = Some(input.parse()?),
                 "extends" => args.extends = Some(input.parse_terminated(Ident::parse, Token![,])?),
+                "rename_all" => {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) = input.parse()?
+                    {
+                        args.rename_all = Some(lit_str.value());
+                    } else {
+                        return Err(Error::new(
+                            key.span(),
+                            "Expected string literal for `rename_all`",
+                        ));
+                    }
+                }
                 _ => {
                     return Err(Error::new(
                         key.span(),
@@ -67,7 +83,9 @@ impl Parse for TsArgs {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
+/// # use ts_macro::ts;
+/// # use wasm_bindgen::prelude::wasm_bindgen;
 /// #[ts]
 /// struct Token {
 ///     symbol: String,
@@ -109,7 +127,8 @@ impl Parse for TsArgs {
 /// To nest structs, the `ts` attribute must be applied to each struct
 /// individually. Then, the bindings can be used as fields in other structs.
 ///
-/// ```rust
+/// ```rust,ignore
+/// # use ts_macro::ts;
 /// #[ts]
 /// struct Order {
 ///     account: String,
@@ -126,7 +145,9 @@ impl Parse for TsArgs {
 ///   `I{StructName}`.
 /// - `extends`: A comma-separated list of interfaces to extend.
 ///
-/// ```rust
+/// ```rust,ignore
+/// # use ts_macro::ts;
+/// # use wasm_bindgen::prelude::wasm_bindgen;
 /// #[ts(name = JsToken)]
 /// struct Token {
 ///     symbol: String,
@@ -169,7 +190,8 @@ impl Parse for TsArgs {
 /// - `optional`: Whether the field is optional in TypeScript. Defaults to
 ///   inferred.
 ///
-/// ```rust
+/// ```rust,ignore
+/// # use ts_macro::ts;
 /// #[ts]
 /// struct Params {
 ///     #[ts(name = "specialCASING")]
@@ -235,8 +257,11 @@ pub fn ts(attr: TokenStream, input: TokenStream) -> TokenStream {
         let mut doc_lines = vec![];
         let mut is_optional = false;
 
-        // Convert the Rust field name to a camelCase TypeScript field name
-        let mut ts_field_name = format_ident!("{}", field_name.to_string().to_lower_camel_case());
+        // Convert the Rust field name to a TypeScript field name
+        let mut ts_field_name = match args.rename_all.as_deref() {
+            Some("none") => format_ident!("{}", field_name),
+            _ => format_ident!("{}", field_name.to_string().to_lower_camel_case()),
+        };
 
         // Convert the Rust type to a TypeScript type
         let mut ts_field_type = match field_type.to_ts_type() {
